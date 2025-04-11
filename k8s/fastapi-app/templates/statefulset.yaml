@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "fastapi-app.fullname" . }}
+  labels:
+    {{- include "fastapi-app.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "fastapi-app.fullname" . }}-headless
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "fastapi-app.selectorLabels" . | nindent 6 }}
+  # podManagementPolicy: Parallel
+
+  template:
+    metadata:
+      labels:
+        {{- include "fastapi-app.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "fastapi-app.fullname" . }}
+      initContainers:
+      - name: init-1
+        image: busybox
+        command: ["/bin/sh", "-c"]
+        args: ["echo 'Line 1' >> /test-volume/test.txt"]
+        volumeMounts:
+          - name: test-volume
+            mountPath: /test-volume
+
+      - name: init-2
+        image: busybox
+        command: ["/bin/sh", "-c"]
+        args: ["echo 'Line 2' >> /test-volume/test.txt"]
+        volumeMounts:
+          - name: test-volume
+            mountPath: /test-volume
+
+      - name: init-3
+        image: busybox
+        command: ["/bin/sh", "-c"]
+        args: ["echo 'Line 3' >> /test-volume/test.txt"]
+        volumeMounts:
+          - name: test-volume
+            mountPath: /test-volume
+
+
+      containers:
+      - name: {{ .Chart.Name }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        env:
+          - name: MY_PASS
+            valueFrom:
+              secretKeyRef:
+                name: my-secret
+                key: MY_PASS
+        ports:
+          - name: http
+            containerPort: {{ .Values.service.port }}
+            protocol: TCP
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "250m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        volumeMounts:
+          - name: config-volume
+            mountPath: /config.json
+            subPath: config.json
+          - name: test-volume
+            mountPath: /test-volume
+      volumes:
+      - name: test-volume
+        emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: config-volume
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.storageClass }}
+        resources:
+          requests:
+            storage: {{ .Values.storage.size }}
